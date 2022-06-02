@@ -7,7 +7,6 @@ from model.rnn_encoder import Hybrid_Alias_Sim
 import torch.nn as nn
 
 
-
 def vectorize(ex, char2ind):
     alias1, alias2, neg = ex
     neg_alias, neg_score = neg
@@ -35,10 +34,7 @@ def vectorize(ex, char2ind):
                 vec_neg_score.append(float(neg_score[i]))
     assert len(vec_neg_alias) >= 5
 
-            
     return vec_alias1, vec_alias2, vec_neg_alias, vec_neg_score
-
-
 
 
 class AliasDataset(Dataset):
@@ -49,16 +45,15 @@ class AliasDataset(Dataset):
         self.char2ind = char2ind
         self.ngram = ngram
         self.neg_num = neg_num
-    
+
     def __len__(self):
         return len(self.examples)
-    
+
     def __getitem__(self, index):
         return vectorize(self.examples[index], self.char2ind)
-    
+
     def lengths(self):
         return [(len(alias1), len(alias2)) for alias1, alias2, _, _ in self.examples]
-
 
 
 def val_batchify(batch):
@@ -77,12 +72,12 @@ def val_batchify(batch):
             x2_char_len.append(len(word))
         x3_word_len = list()
         x3_char_len = list()
-            
+
         for neg_alias in ex[2]:
             x3_word_len.append(len(neg_alias))
             for word in neg_alias:
                 x3_char_len.append(len(word))
-        neg_v =  torch.LongTensor(len(x3_word_len), max(x3_word_len), max(x3_char_len)).zero_()
+        neg_v = torch.LongTensor(len(x3_word_len), max(x3_word_len), max(x3_char_len)).zero_()
         neg_word_mask = torch.ByteTensor(len(x3_word_len), max(x3_word_len)).fill_(1)
         neg_char_mask = torch.ByteTensor(len(x3_word_len), max(x3_word_len), max(x3_char_len)).fill_(1)
         for i, neg_alias in enumerate(ex[2]):
@@ -95,14 +90,13 @@ def val_batchify(batch):
         x3_word_mask.append(neg_word_mask)
         x3_char_mask.append(neg_char_mask)
 
-
     x1 = torch.LongTensor(len(x1_word_len), max(x1_word_len), max(x1_char_len)).zero_()
     x1_word_mask = torch.ByteTensor(len(x1_word_len), max(x1_word_len)).fill_(1)
     x1_char_mask = torch.ByteTensor(len(x1_word_len), max(x1_word_len), max(x1_char_len)).fill_(1)
     x2 = torch.LongTensor(len(x2_word_len), max(x2_word_len), max(x2_char_len)).zero_()
     x2_word_mask = torch.ByteTensor(len(x2_word_len), max(x2_word_len)).fill_(1)
     x2_char_mask = torch.ByteTensor(len(x2_word_len), max(x2_word_len), max(x2_char_len)).fill_(1)
-    
+
     for i in range(len(x1_word_len)):
         vec_alias1 = batch[i][0]
         for j, word in enumerate(vec_alias1):
@@ -120,9 +114,6 @@ def val_batchify(batch):
     return x1, x1_word_mask, x1_char_mask, x2, x2_word_mask, x2_char_mask, x3, x3_word_mask, x3_char_mask
 
 
-
-
-
 def train_batchify(batch):
     num_neg = 5
     '''
@@ -131,7 +122,7 @@ def train_batchify(batch):
     x3: neg_alias, (batch*num_neg) * max(x3_length)
     '''
     #### len(neg_subsamples) = len(batch) * num_neg
-    
+
     neg_alias = list()
     x1_word_len, x1_char_len, x2_word_len, x2_char_len, x3_word_len, x3_char_len = list(), list(), list(), list(), list(), list()
     for ex in batch:
@@ -144,28 +135,28 @@ def train_batchify(batch):
         for word in vec_alias2:
             x2_char_len.append(len(word))
         neg_candidate = ex[2]
-        neg_score =np.array(ex[3]) 
+        neg_score = np.array(ex[3])
         neg_score /= neg_score.sum()
 
         if len(neg_score) == 0:
             indices = random.sample(range(len(neg_candidate)), num_neg)
-        elif random.random() > 0.5:   
+        elif random.random() > 0.5:
             indices = np.random.choice(range(len(neg_candidate)), num_neg, replace=False, p=neg_score)
         else:
             indices = random.sample(range(len(neg_candidate)), num_neg)
 
-        #indices = random.sample(range(len(neg_candidate)), num_neg)
+        # indices = random.sample(range(len(neg_candidate)), num_neg)
         for i in range(num_neg):
             neg_alias.append(list())
             x3_word_len.append(list())
             x3_char_len.append(list())
-        
+
         for i, ind in enumerate(indices):
             neg_alias[i].append(neg_candidate[ind])
             x3_word_len[i].append(len(neg_candidate[ind]))
             for word in neg_candidate[ind]:
                 x3_char_len[i].append(len(word))
-    
+
     x1 = torch.LongTensor(len(x1_word_len), max(x1_word_len), max(x1_char_len)).zero_()
     x1_word_mask = torch.ByteTensor(len(x1_word_len), max(x1_word_len)).fill_(1)
     x1_char_mask = torch.ByteTensor(len(x1_word_len), max(x1_word_len), max(x1_char_len)).fill_(1)
@@ -188,11 +179,11 @@ def train_batchify(batch):
             x2[i, j, :len(word)].copy_(a2)
             x2_char_mask[i, j, :len(word)].fill_(0)
         x2_word_mask[i, :len(vec_alias2)].fill_(0)
-    
+
     for j in range(num_neg):
         x3 = torch.LongTensor(len(x3_word_len[j]), max(x3_word_len[j]), max(x3_char_len[j])).zero_()
         x3_word_mask = torch.ByteTensor(len(x3_word_len[j]), max(x3_word_len[j])).fill_(1)
-        x3_char_mask = torch.ByteTensor(len(x3_word_len[j]), max(x3_word_len[j]), max(x3_char_len[j])).fill_(1) 
+        x3_char_mask = torch.ByteTensor(len(x3_word_len[j]), max(x3_word_len[j]), max(x3_char_len[j])).fill_(1)
         for i in range(len(neg_alias[j])):
             vec_neg = neg_alias[j][i]
             for k, word in enumerate(vec_neg):
@@ -204,8 +195,4 @@ def train_batchify(batch):
             neg3_word_mask.append(x3_word_mask)
             neg3_char_mask.append(x3_char_mask)
 
-
     return x1, x1_word_mask, x1_char_mask, x2, x2_word_mask, x2_char_mask, neg3, neg3_word_mask, neg3_char_mask
-    
-
-
