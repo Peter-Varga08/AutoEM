@@ -1,0 +1,25 @@
+[flake8]
+# basics
+max_line_length = 120
+statistics = True
+exclude = .flake8, *.yaml, .venv/*, */lib/python3.8/site-packages/*
+count = True
+show_source = False
+spellcheck-targets = comments
+
+# flake-quotes
+multiline-quotes = """
+docstring-quotes = """
+ignore = Q000
+
+[mypy]
+ignore-missing-imports = True
+no-strict-optional = True
+
+# TODO: Figure out why this gets ignored
+[pep8]
+max_line_length = 120
+in-place = true
+aggressive = 3
+list-fixes = true
+jobs = -1
