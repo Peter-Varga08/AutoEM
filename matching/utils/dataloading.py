@@ -74,28 +74,31 @@ def load_data_train(filename: str, is_lowercase: bool, pre_negscore: str):
     return data
 
 
-def load_words(exs, ngram):
-    words = set()
+def load_words(examples, ngram):
+    vocabulary = set()
     UNK = '<unk>'
     PAD = '<pad>'
-    words.add(PAD)
-    words.add(UNK)
+    vocabulary.add(PAD)
+    vocabulary.add(UNK)
     char2ind = {PAD: 0, UNK: 1}
     ind2char = {0: PAD, 1: UNK}
-    for alias1, alias2, _ in exs:
+    for alias1, alias2, _ in examples:
+        # Add first alias to vocabulary
         for i in range(0, len(alias1) - (ngram - 1), ngram):
-            words.add(alias1[i:i + ngram])
+            vocabulary.add(alias1[i:i + ngram])
         if ngram == 2:
             if len(alias1) % 2 == 1:
-                words.add(alias1[len(alias1) - 1])
+                vocabulary.add(alias1[len(alias1) - 1])
+
+        # Add second alias to vocabulary
         for i in range(0, len(alias2) - (ngram - 1), ngram):
-            words.add(alias2[i:i + ngram])
+            vocabulary.add(alias2[i:i + ngram])
         if ngram == 2:
             if len(alias2) % 2 == 1:
-                words.add(alias2[len(alias2) - 1])
-    words = sorted(words)
-    for w in words:
+                vocabulary.add(alias2[len(alias2) - 1])
+    vocabulary = sorted(vocabulary)
+    for w in vocabulary:
         idx = len(char2ind)
         char2ind[w] = idx
         ind2char[idx] = w
-    return words, char2ind, ind2char
+    return vocabulary, char2ind, ind2char
