@@ -1,3 +1,6 @@
+import argparse
+from typing import List, Set, Union
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -5,9 +8,14 @@ from torch.nn import functional as F
 
 
 class Hybrid_Alias_Sim(nn.Module):
-    def __init__(self, args, voc):
+    def __init__(self, args: argparse.Namespace, voc: Set[str]):
+        """"""
         super(Hybrid_Alias_Sim, self).__init__()
         self.args = args
+
+        # |----------------------------------------|
+        # |     Architecture: Character-level      |
+        # |----------------------------------------|
         self.char_rnn = Encoder_rnn(args, self.args.input_size, self.args.hidden_size)
         self.char_match_attn = MatchAttn(self.args.hidden_size * 2)
         self.char_linear_attn = LinearAttn(self.args.hidden_size * 4)
@@ -16,6 +24,10 @@ class Hybrid_Alias_Sim(nn.Module):
             nn.Dropout(0.5),
             nn.ReLU()
         )
+
+        # |----------------------------------------|
+        # |     Architecture: Word-level           |
+        # |----------------------------------------|
         # out_hidden_size = 2 * self.args.hidden_size if self.args.bidirect else self.args.hidden_size
         self.word_rnn = Encoder_rnn(args, self.args.input_size * 2, self.args.hidden_size)
         self.word_match_attn = MatchAttn(self.args.hidden_size * 2)
@@ -23,6 +35,9 @@ class Hybrid_Alias_Sim(nn.Module):
         self.embeddings = nn.Embedding(num_embeddings=len(voc), embedding_dim=self.args.embedding_dim,
                                        padding_idx=0, max_norm=None, scale_grad_by_freq=False, sparse=False)
 
+        # |----------------------------------------|
+        # |     Architecture: Classification       |
+        # |----------------------------------------|
         self.final_layer = torch.nn.Sequential(
             nn.Linear(self.args.hidden_size * 8, 300),
             nn.Dropout(0.5),
@@ -30,19 +45,24 @@ class Hybrid_Alias_Sim(nn.Module):
             nn.Linear(300, 1)
         )
 
-    def char_encoder(self, alias, alias_char_mask, is_sample=False):
+    def char_encoder(self, alias: torch.Tensor, alias_char_mask: torch.Tensor, is_sample: bool = False):
         device = torch.device("cuda")
+
+        batch_size: int
+        word_max_len: int
+        char_max_len: int
         batch_size, word_max_len, char_max_len = alias.size(0), alias.size(1), alias.size(2)
         alias = alias.view(batch_size * word_max_len, char_max_len)
+
         alias_rep = self.embeddings(alias)
 
-        alias_char_len = alias_char_mask.view(batch_size * word_max_len, char_max_len).data.eq(0).long().sum(
-            1).cpu().numpy().tolist()
-        alias_char_mask = alias_char_mask.view(batch_size * word_max_len, char_max_len)
+        alias_char_len: Union[torch.Tensor, List[int]]
+        alias_char_len = alias_char_mask.view(batch_size * word_max_len, char_max_len).data.eq(0).long().sum(1). \
+            cpu().numpy().tolist()
 
+        alias_char_idx: List[int]
         alias_char_idx = [i for i in range(len(alias_char_len)) if alias_char_len[i] > 0]
-        alias_char_mask = alias_char_mask.view(batch_size * word_max_len, char_max_len)[alias_char_idx]
-        alias_char_len = [i for i in alias_char_len if i > 0]
+        alias_char_len = [i for i in alias_char_len if i > 0]  # filter zero character lengths
         alias_rep = alias_rep[alias_char_idx]
 
         alias_rep = self.char_rnn(alias_rep, alias_char_len, is_sample)
@@ -134,47 +154,6 @@ class Hybrid_Alias_Sim(nn.Module):
         return torch.squeeze(score)
 
 
-# class Hybrid_Alias_Rep(nn.Module):
-#     def __init__(self, args, voc):
-#         super(Hybrid_Alias_Rep, self).__init__()
-#         self.args = args
-#         self.voc = voc
-#         self.char_rnn = Encoder_rnn(args, self.args.input_size, self.args.hidden_size)
-#         self.word_rnn = Encoder_rnn(args, self.args.input_size * 2, self.args.hidden_size)
-#         out_hidden_size = 2 * self.args.hidden_size if self.args.bidirect else self.args.hidden_size
-#         self.embeddings = nn.Embedding(num_embeddings=len(self.voc), embedding_dim=self.args.embedding_dim,
-#                                        padding_idx=0, max_norm=None, scale_grad_by_freq=False, sparse=False)
-#
-#         self.char_self_attn = LinearAttn(out_hidden_size)
-#
-#     def forward(self, alias1, alias1_word_mask, alias1_char_mask, alias2, alias2_word_mask, is_sample=False):
-#         device = torch.device("cuda")
-#         batch_size, word_max_len1, char_max_len1 = alias1.size(0)
-#         alias = alias.view(batch_size * word_max_len, char_max_len)
-#
-#         alias_rep = self.embeddings(alias)
-#
-#         alias_char_len = alias_char_mask.view(batch_size * word_max_len, char_max_len).data.eq(0).long().sum(
-#             1).cpu().numpy().tolist()
-#         alias_char_idx = [i for i in range(len(alias_char_len)) if alias_char_len[i] > 0]
-#         alias_char_mask = alias_char_mask.view(batch_size * word_max_len, char_max_len)[alias_char_idx]
-#         alias_char_len = [i for i in alias_char_len if i > 0]
-#         alias_rep = alias_rep[alias_char_idx]
-#         alias_rep = self.char_encoder(alias_rep, alias_char_len)
-#
-#         alias_rep = self.char_self_attn(alias_rep, alias_char_mask)
-#         del alias_char_mask
-#
-#         alias_word_rep = torch.FloatTensor(batch_size * word_max_len, 2 * self.args.hidden_size).zero_().to(device)
-#         alias_word_rep[alias_char_idx] = alias_rep
-#         # del alias_rep
-#
-#         alias_word_rep = alias_word_rep.view(batch_size, word_max_len, -1)
-#         alias_word_len = alias_word_mask.data.cpu().eq(0).long().sum(1).cpu().numpy().tolist()
-#
-#         return self.word_encoder(alias_word_rep, alias_word_len, is_sample)
-
-
 class Encoder_rnn(nn.Module):
     def __init__(self, args, input_size, hidden_size):
         super(Encoder_rnn, self).__init__()
@@ -198,16 +177,17 @@ class Encoder_rnn(nn.Module):
 
         packed_emb = torch.nn.utils.rnn.pack_padded_sequence(alias, alias_len, batch_first=True)
         output, hn = self.rnn(packed_emb)
+
         if self.args.self_attn and not is_sample:
             unpacked, unpacked_len = torch.nn.utils.rnn.pad_packed_sequence(output)
             unpacked = unpacked.transpose(0, 1)
             unpacked = unpacked[torch.LongTensor(unsorted_idx)]
             return unpacked
+
         if self.args.bidirect:
             hn = hn.view(self.args.num_layers, 2, -1, self.args.hidden_size)
             hn = hn[-1, :, :, :]
             hn = torch.cat((hn[0], hn[1]), 1)
-
         else:
             hn = hn[-1, :, :]
 
@@ -246,7 +226,7 @@ class LinearAttn(nn.Module):
         super(LinearAttn, self).__init__()
         self.linear = nn.Linear(input_size, 1)
 
-    def forward(self, x, x_mask):
+    def forward(self, x: torch.Tensor, x_mask: torch.Tensor):
         """
         Args:
             x: batch * len * hdim
