@@ -1,7 +1,7 @@
 # TODO: add docstring for module
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
-NegAliasesScores = Tuple[List[str], list]
+NegAliasesScores = Tuple[List[str], List[Any]]
 PositiveAlias_NegativesAliasesScores = List[Tuple[str, str, NegAliasesScores]]
 NegativeScoreDict = Dict[str, Dict[str, str]]
 
@@ -43,12 +43,13 @@ def load_data(filename: str, is_lowercase: bool) -> PositiveAlias_NegativesAlias
     alias2: str
     neg_alias: str
     neg_aliases: List[str]
+    scores: List[Any] = []
     neg_aliases_scores: NegAliasesScores  # scores is empty list, no pre_negscore file loaded
 
     for line in open(filename, 'r').readlines():
         alias1, alias2, neg_alias = get_aliases_from_line(line, is_lowercase)
         neg_aliases = neg_alias.split('___')
-        neg_aliases_scores = neg_aliases, []
+        neg_aliases_scores = neg_aliases, scores
         data.append((alias1, alias2, neg_aliases_scores))
     return data
 
