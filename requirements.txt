@@ -1,3 +1,6 @@
+#TODO: IF projects works with currently installed requirements, then
+#--> pip freeze > requirements.txt
+
 numpy
 scipy
 torch

@@ -1,10 +1,8 @@
+import random
+
+import numpy as np
 import torch
 from torch.utils.data import Dataset
-from torch.utils.data.sampler import Sampler
-import numpy as np
-import random
-from model.rnn_encoder import Hybrid_Alias_Sim
-import torch.nn as nn
 
 
 def vectorize(ex, char2ind):
@@ -121,10 +119,10 @@ def train_batchify(batch):
     x2: pos_alias2, batch * max(x2_length) * max(char2_length)
     x3: neg_alias, (batch*num_neg) * max(x3_length)
     '''
-    #### len(neg_subsamples) = len(batch) * num_neg
+    # len(neg_subsamples) = len(batch) * num_neg
 
     neg_alias = list()
-    x1_word_len, x1_char_len, x2_word_len, x2_char_len, x3_word_len, x3_char_len = list(), list(), list(), list(), list(), list()
+    x1_word_len, x1_char_len, x2_word_len, x2_char_len, x3_word_len, x3_char_len = [[] for _ in range(6)]
     for ex in batch:
         vec_alias1 = ex[0]
         x1_word_len.append(len(vec_alias1))

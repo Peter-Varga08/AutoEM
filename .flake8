@@ -2,7 +2,7 @@
 # basics
 max_line_length = 120
 statistics = True
-exclude = .flake8, *.yaml, .venv/*, */lib/python3.8/site-packages/*
+exclude = .flake8, *.yaml, venv/*, */lib/python3.8/site-packages/*
 count = True
 show_source = False
 spellcheck-targets = comments

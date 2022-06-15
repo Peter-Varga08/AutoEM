@@ -1,2 +1,6 @@
 type/
 .idea/
+log/
+TODO*
+.*/__pycache__/
+__pycache__/

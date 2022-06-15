@@ -1,76 +1,80 @@
-# TODO: add docstring
-from typing import List, Tuple
+# TODO: add docstring for module
+from typing import Dict, List, Tuple
+
+NegAliasesScores = Tuple[List[str], list]
+PositiveAlias_NegativesAliasesScores = List[Tuple[str, str, NegAliasesScores]]
+NegativeScoreDict = Dict[str, Dict[str, str]]
 
 
-def load_data(filename: str, is_lowercase: bool) -> List[Tuple[str, str, Tuple[List[str], list]]]:
-    """
-    Dataloader for dev and test sets.
-    """
-    data: List[Tuple[str, str, Tuple[List[str], list]]] = []
-    kb_link: str
-    alias1: str
-    alias2: str
-    neg_alias: str
+def get_aliases_from_line(line: str, is_lowercase: bool):
+    items = line[:-1].split('\t')
+    if len(items) == 5:
+        entity_name, alias1, alias2, neg_alias, _ = items
+    else:
+        entity_name, alias1, alias2, neg_alias = items
 
-    for ln in open(filename, 'r').readlines():
-        items = ln[:-1].split('\t')
-        if len(items) == 5:
-            kb_link, alias1, alias2, neg_alias, _ = items
-        else:
-            kb_link, alias1, alias2, neg_alias = items
-        if len(alias1) <= 1 or len(alias2) <= 1:
-            continue
-        if is_lowercase:
-            alias1 = alias1.lower()
-            alias2 = alias2.lower()
-            neg_alias = neg_alias.lower()  # string of all negative aliases
-        neg_aliases: List[str]
-        neg_aliases = neg_alias.split('___')
-        neg: Tuple[List[str], List] = neg_aliases, []
-        data.append((alias1, alias2, neg))
-    return data
-
-
-def load_data_train(filename: str, is_lowercase: bool, pre_negscore: str):
-    if pre_negscore is not None:
-        score_ln = open(pre_negscore, 'r').readlines()
-        score_dict = dict()
-        for ln in score_ln:
-            alias, neg_alias, neg_score = ln[:-1].split('\t')
-            score_dict[alias] = {'neg': neg_alias, 'neg_score': neg_score}
-
-    data = list()
-    for ln in open(filename, 'r').readlines():
-        items = ln[:-1].split('\t')
-        if len(items) == 5:
-            kb_link, alias1, alias2, neg_alias, _ = items
-        else:
-            kb_link, alias1, alias2, neg_alias = items
-
-        if len(alias1) <= 1 or len(alias2) <= 1:
-            continue
-
+    if len(alias1) >= 1 and len(alias2) >= 1:
         if is_lowercase:
             alias1 = alias1.lower()
             alias2 = alias2.lower()
             neg_alias = neg_alias.lower()
+    return alias1, alias2, neg_alias
 
-        if pre_negscore is not None:
-            if alias1 not in score_dict:
-                continue
-            neg_aliases = score_dict[alias1]['neg'].split('__')
-            if len(neg_aliases) < 20:
-                continue
-            neg_scores = score_dict[alias1]['neg_score'].split('__')
-            neg = neg_aliases, neg_scores
-            data.append((alias1, alias2, neg))
+
+# Are negative scores required for training?
+def load_train_negative_scores(file_path: str) -> NegativeScoreDict:
+    score_dict = dict()
+    if file_path is None:
+        return score_dict
+    score_lines = open(file_path, 'r').readlines()
+    for line in score_lines:
+        entity_name, neg_aliases, neg_scores = line[:-1].split('\t')
+        score_dict[entity_name] = {'neg': neg_aliases, 'neg_score': neg_scores}
+    return score_dict
+
+
+def load_data(filename: str, is_lowercase: bool) -> PositiveAlias_NegativesAliasesScores:
+    """
+    Dataloader for dev and test sets.
+    """
+    data = []
+    kb_link: str
+    alias1: str
+    alias2: str
+    neg_alias: str
+    neg_aliases: List[str]
+    neg_aliases_scores: NegAliasesScores  # scores is empty list, no pre_negscore file loaded
+
+    for line in open(filename, 'r').readlines():
+        alias1, alias2, neg_alias = get_aliases_from_line(line, is_lowercase)
+        neg_aliases = neg_alias.split('___')
+        neg_aliases_scores = neg_aliases, []
+        data.append((alias1, alias2, neg_aliases_scores))
+    return data
+
+
+def load_data_train(filename: str, is_lowercase: bool, pre_negscore: str) -> PositiveAlias_NegativesAliasesScores:
+    data = []
+
+    for line in open(filename, 'r').readlines():
+        # Get entity_name pos_alias neg_alias1___neg_alias2___neg_aliasX...
+        alias1, alias2, neg_alias = get_aliases_from_line(line, is_lowercase)
+
+        # If negative score of positive/negative aliases are available, construct score dictionary
+        # and append data with scores
+        neg_score_dict = load_train_negative_scores(pre_negscore)
+        if len(neg_score_dict) > 0:  # pre_negscore was given a valid filepath
+            if alias1 in neg_score_dict:
+                neg_aliases = neg_score_dict[alias1]['neg'].split('__')
+                if len(neg_aliases) > 20:
+                    neg_scores = neg_score_dict[alias1]['neg_score'].split('__')
+                    neg_aliases_scores = neg_aliases, neg_scores
+                    data.append((alias1, alias2, neg_aliases_scores))
         else:
             neg_aliases = neg_alias.split('___')
-            if len(neg_aliases) < 20:
-                continue
-            neg = neg_aliases, list()
-            data.append((alias1, alias2, neg))
-
+            if len(neg_aliases) > 20:
+                neg_aliases_scores = neg_aliases, []
+                data.append((alias1, alias2, neg_aliases_scores))
     return data
 
 
@@ -82,6 +86,7 @@ def load_words(examples, ngram):
     vocabulary.add(UNK)
     char2ind = {PAD: 0, UNK: 1}
     ind2char = {0: PAD, 1: UNK}
+
     for alias1, alias2, _ in examples:
         # Add first alias to vocabulary
         for i in range(0, len(alias1) - (ngram - 1), ngram):
