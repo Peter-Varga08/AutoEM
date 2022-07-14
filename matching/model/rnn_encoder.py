@@ -195,32 +195,6 @@ class Encoder_rnn(nn.Module):
         return hn
 
 
-class LinearMatchAttn(nn.Module):
-    def __init__(self, input_size):
-        super(LinearMatchAttn, self).__init__()
-        self.linear = nn.Linear(input_size, 1)
-
-    def forward(self, x, x_mask, x_o):
-        """
-        Args:
-            x: batch * len * hdim
-            x_mask: batch * len (1 for padding, 0 for true)
-        Output:
-            alpha: batch * len
-        """
-        x_flat = x.view(x.size(0) * x.size(1), x.size(2))
-        # change to batch * len * hdim
-        scores = self.linear(x_flat).view(x.size(0), x.size(1))
-
-        scores.data.masked_fill_(x_mask.data, -float('inf'))
-        alpha = F.softmax(scores, dim=1)
-
-        # x = x.transpose(0, 1)
-        output_avg = alpha.unsqueeze(1).bmm(x_o).squeeze(1)
-
-        return output_avg
-
-
 class LinearAttn(nn.Module):
     def __init__(self, input_size):
         super(LinearAttn, self).__init__()

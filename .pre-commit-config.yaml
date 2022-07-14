@@ -12,13 +12,6 @@ repos:
       - id: end-of-file-fixer
         name: end-of-file-fixer
 
-  # TODO: Fix this, it does nothing atm
-  - repo: https://github.com/pre-commit/mirrors-autopep8
-    rev: v1.6.0
-    hooks:
-      - id: autopep8
-        name: formatter_autopep8
-
   - repo: https://github.com/hakancelik96/unimport
     rev: 0.9.6
     hooks:

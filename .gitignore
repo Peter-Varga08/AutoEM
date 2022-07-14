@@ -4,3 +4,8 @@ log/
 TODO*
 .*/__pycache__/
 __pycache__/
+wandb/
+venv/
+log/
+.mypy_cache/
+artifacts/

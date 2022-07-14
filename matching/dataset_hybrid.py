@@ -1,17 +1,18 @@
 import random
 
-import numpy as np
 import torch
 from torch.utils.data import Dataset
 
 
-def vectorize(ex, char2ind):
-    alias1, alias2, neg = ex
-    neg_alias, neg_score = neg
+def vectorize(ex, char2ind, neg_num):
+    """
+    Create a vectorized representation for each positive and negative alias within each example.
+    For example: "Mike Johns" --> vec = [[num, num, num, num], [num, num, num, num, num]]
+    """
+    alias1, alias2, neg_aliases = ex
     vec_alias1 = list()
     vec_alias2 = list()
-    vec_neg_alias = list()
-    vec_neg_score = list()
+    vec_neg_aliases = list()
 
     for word in alias1.split():
         char_in_word = [char2ind[ch] if ch in char2ind else char2ind['<unk>'] for ch in word]
@@ -19,7 +20,7 @@ def vectorize(ex, char2ind):
     for word in alias2.split():
         char_in_word = [char2ind[ch] if ch in char2ind else char2ind['<unk>'] for ch in word]
         vec_alias2.append(char_in_word)
-    for i, nalias in enumerate(neg_alias):
+    for i, nalias in enumerate(neg_aliases):
         if len(nalias) <= 1:
             continue
         vec_neg = list()
@@ -27,31 +28,28 @@ def vectorize(ex, char2ind):
             char_in_word = [char2ind[ch] if ch in char2ind else char2ind['<unk>'] for ch in word]
             vec_neg.append(char_in_word)
         if len(vec_neg) > 0:
-            vec_neg_alias.append(vec_neg)
-            if len(neg_score) > 0:
-                vec_neg_score.append(float(neg_score[i]))
-    assert len(vec_neg_alias) >= 5
+            vec_neg_aliases.append(vec_neg)
+    assert len(vec_neg_aliases) >= neg_num
 
-    return vec_alias1, vec_alias2, vec_neg_alias, vec_neg_score
+    return vec_alias1, vec_alias2, vec_neg_aliases
 
 
 class AliasDataset(Dataset):
-    def __init__(self, examples, ind2char, voc, char2ind, ngram, neg_num):
+    def __init__(self, examples, ind2char, voc, char2ind, neg_num):
         self.examples = examples
         self.ind2char = ind2char
         self.voc = voc
         self.char2ind = char2ind
-        self.ngram = ngram
         self.neg_num = neg_num
 
     def __len__(self):
         return len(self.examples)
 
     def __getitem__(self, index):
-        return vectorize(self.examples[index], self.char2ind)
+        return vectorize(self.examples[index], self.char2ind, self.neg_num)
 
     def lengths(self):
-        return [(len(alias1), len(alias2)) for alias1, alias2, _, _ in self.examples]
+        return [(len(alias1), len(alias2)) for alias1, alias2, *_ in self.examples]
 
 
 def val_batchify(batch):
@@ -60,18 +58,18 @@ def val_batchify(batch):
     x3_word_mask = list()
     x3_char_mask = list()
     for ex in batch:
-        vec_alias1 = ex[0]
+        vec_alias1, vec_alias2, neg_aliases, = ex
+
         x1_word_len.append(len(vec_alias1))
         for word in vec_alias1:
             x1_char_len.append(len(word))
-        vec_alias2 = ex[1]
         x2_word_len.append(len(vec_alias2))
         for word in vec_alias2:
             x2_char_len.append(len(word))
         x3_word_len = list()
         x3_char_len = list()
 
-        for neg_alias in ex[2]:
+        for neg_alias in neg_aliases:
             x3_word_len.append(len(neg_alias))
             for word in neg_alias:
                 x3_char_len.append(len(word))
@@ -113,48 +111,47 @@ def val_batchify(batch):
 
 
 def train_batchify(batch):
-    num_neg = 5
     '''
+    Batchify train examples by
+    Return:
     x1: pos_alias1, batch * max(x1_length) * max(char1_length)
     x2: pos_alias2, batch * max(x2_length) * max(char2_length)
     x3: neg_alias, (batch*num_neg) * max(x3_length)
     '''
     # len(neg_subsamples) = len(batch) * num_neg
 
+    num_neg = 5
     neg_alias = list()
     x1_word_len, x1_char_len, x2_word_len, x2_char_len, x3_word_len, x3_char_len = [[] for _ in range(6)]
+
+    # Get number of words and characters per word for each example
     for ex in batch:
-        vec_alias1 = ex[0]
+        vec_alias1, vec_alias2, neg_candidate = ex
+
+        # alias1 lengths
         x1_word_len.append(len(vec_alias1))
         for word in vec_alias1:
             x1_char_len.append(len(word))
-        vec_alias2 = ex[1]
+
+        # alias2 lengths
         x2_word_len.append(len(vec_alias2))
         for word in vec_alias2:
             x2_char_len.append(len(word))
-        neg_candidate = ex[2]
-        neg_score = np.array(ex[3])
-        neg_score /= neg_score.sum()
 
-        if len(neg_score) == 0:
-            indices = random.sample(range(len(neg_candidate)), num_neg)
-        elif random.random() > 0.5:
-            indices = np.random.choice(range(len(neg_candidate)), num_neg, replace=False, p=neg_score)
-        else:
-            indices = random.sample(range(len(neg_candidate)), num_neg)
-
-        # indices = random.sample(range(len(neg_candidate)), num_neg)
+        # neg alias lengths
         for i in range(num_neg):
             neg_alias.append(list())
             x3_word_len.append(list())
             x3_char_len.append(list())
-
+        indices = random.sample(range(len(neg_candidate)), num_neg)
         for i, ind in enumerate(indices):
             neg_alias[i].append(neg_candidate[ind])
             x3_word_len[i].append(len(neg_candidate[ind]))
             for word in neg_candidate[ind]:
                 x3_char_len[i].append(len(word))
 
+    # Batchify alias1, alias2 and neg_aliases by creating a padded matrix for the raw data, as well as
+    # the masks
     x1 = torch.LongTensor(len(x1_word_len), max(x1_word_len), max(x1_char_len)).zero_()
     x1_word_mask = torch.ByteTensor(len(x1_word_len), max(x1_word_len)).fill_(1)
     x1_char_mask = torch.ByteTensor(len(x1_word_len), max(x1_word_len), max(x1_char_len)).fill_(1)
