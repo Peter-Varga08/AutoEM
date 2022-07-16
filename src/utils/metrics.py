@@ -3,6 +3,11 @@ import pdb
 
 
 def mrr_score(data_loader, model, device):
+    """
+    Compute normalized MRR score for all batches of a validation dataloader, with the 'correct response' being the
+    pos_score of alias1,alias2 in each batch of 1 positive and 5 negative examples.
+    """
+
     model.eval()
     ranking = 0
     num_examples = 0
@@ -52,7 +57,6 @@ def mrr_score(data_loader, model, device):
             ranking_denominator = sorted_idx.index(len(neg_scores) - 1) + 1
             ranking += 1 / ranking_denominator
             num_examples += 1
-            pdb.set_trace()
 
     # In order to get highest value of 'ranking', 'ranking_denominator' would need to always be equal to 1
     ranking /= num_examples

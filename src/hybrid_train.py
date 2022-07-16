@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os.path
+import pdb
 import pickle
 import time
 
@@ -51,10 +52,9 @@ def train(args, data_loader, val_train_loader, model, device, best_mrr):
             neg_char_mask = batch[8][i].to(device)
             neg_score = model(alias1, alias1_word_mask, alias1_char_mask, neg_alias, neg_word_mask, neg_char_mask)
             neg_score = neg_score.neg().sigmoid().log().sum()
-            loss = loss + neg_score
+            loss += neg_score
 
         # normalize loss by number of words/tokens in alias1
-        # LOGGER.warning(f"ALIAS1 SIZE IN BATCH [{idx}]: {alias1.size(0)}")
         loss = -loss.sum() / alias1.size(0)
 
         optimizer.zero_grad()
@@ -70,6 +70,7 @@ def train(args, data_loader, val_train_loader, model, device, best_mrr):
 
             LOGGER.info('number of steps: %d, loss: %.5f time: %.5f' % (idx, print_loss_avg, time.time() - start))
             print_loss_total = 0
+            # compute MRR score on ENTIRE validation dataloader
             score = mrr_score(val_train_loader, model, device)
             LOGGER.info("MRR SCORE IS %.5f:" % score)
 
