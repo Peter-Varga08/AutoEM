@@ -1,16 +1,16 @@
 import argparse
 import logging
+import os.path
 import pickle
 import time
 
-import numpy as np
-from rich.logging import RichHandler
-
-import dataset_hybrid
 import torch
-from model.rnn_encoder import Hybrid_Alias_Sim
+from rich.logging import RichHandler
 from torch.nn.utils import clip_grad_norm_
 from tqdm import tqdm
+
+import dataset_hybrid
+from model.rnn_encoder import Hybrid_Alias_Sim
 from utils.dataloading import load_adg_data, load_data, load_words
 from utils.metrics import mrr_score, precision_recall
 
@@ -70,9 +70,11 @@ def train(args, data_loader, val_train_loader, model, device, best_mrr):
 
             LOGGER.info('number of steps: %d, loss: %.5f time: %.5f' % (idx, print_loss_avg, time.time() - start))
             print_loss_total = 0
-            score = mrr_score(args, val_train_loader, model, device)
+            score = mrr_score(val_train_loader, model, device)
+            LOGGER.info("MRR SCORE IS %.5f:" % score)
 
             if score > best_mrr:
+                LOGGER.info("Saving current model weights...")
                 torch.save(model, args.save_model)
                 best_mrr = score
             model.train()
@@ -94,7 +96,7 @@ def main():
     parser.add_argument('--test-file', type=str,
                         default='../artifacts/adg_data_sample:v3/ADGDataSample_international_test.json')
     parser.add_argument('--batch-size', type=int, default=32)
-    parser.add_argument('--num-epochs', type=int, default=3)
+    parser.add_argument('--num-epochs', type=int, default=20)
     parser.add_argument('--input-size', type=int, default=300)
     parser.add_argument('--hidden-size', type=int, default=300)
     parser.add_argument('--num-layers', type=int, default=2)
@@ -129,6 +131,11 @@ def main():
     LOGGER.setLevel(logging.INFO)
     LOGGER.addHandler(console)
     LOGGER.addHandler(logfile)
+
+    if not os.path.exists('model'):
+        os.mkdir('model')
+    if not os.path.exists('log'):
+        os.mkdir('log')
 
     if args.adg:
         LOGGER.info("LOADING ADG DATASETS...")
@@ -183,7 +190,7 @@ def main():
                                              collate_fn=dataset_hybrid.val_batchify, pin_memory=args.cuda)
 
     start_epoch = 0
-    LOGGER.info('start training:')
+    LOGGER.info('Start training:')
     best_mrr = 0
 
     for epoch in range(start_epoch, args.num_epochs):
@@ -192,6 +199,7 @@ def main():
                                                    sampler=train_sampler, num_workers=args.data_workers,
                                                    collate_fn=dataset_hybrid.train_batchify, pin_memory=args.cuda)
         best_mrr = train(args, train_loader, dev_loader, model, device, best_mrr)
+    LOGGER.info("Training has completed.")
 
 
 if __name__ == "__main__":

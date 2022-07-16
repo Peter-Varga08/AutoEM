@@ -16,6 +16,8 @@ class Hybrid_Alias_Sim(nn.Module):
         # |----------------------------------------|
         # |     Architecture: Character-level      |
         # |----------------------------------------|
+        self.embeddings = nn.Embedding(num_embeddings=len(voc), embedding_dim=self.args.embedding_dim,
+                                       padding_idx=0, max_norm=None, scale_grad_by_freq=False, sparse=False)
         self.char_rnn = Encoder_rnn(args, self.args.input_size, self.args.hidden_size)
         self.char_match_attn = MatchAttn(self.args.hidden_size * 2)
         self.char_linear_attn = LinearAttn(self.args.hidden_size * 4)
@@ -32,8 +34,6 @@ class Hybrid_Alias_Sim(nn.Module):
         self.word_rnn = Encoder_rnn(args, self.args.input_size * 2, self.args.hidden_size)
         self.word_match_attn = MatchAttn(self.args.hidden_size * 2)
         self.word_self_attn = LinearAttn(self.args.hidden_size * 4)
-        self.embeddings = nn.Embedding(num_embeddings=len(voc), embedding_dim=self.args.embedding_dim,
-                                       padding_idx=0, max_norm=None, scale_grad_by_freq=False, sparse=False)
 
         # |----------------------------------------|
         # |     Architecture: Classification       |

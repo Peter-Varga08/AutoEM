@@ -1,7 +1,8 @@
 from tqdm import tqdm
+import pdb
 
 
-def mrr_score(data_loader, model, device, logger):
+def mrr_score(data_loader, model, device):
     model.eval()
     ranking = 0
     num_examples = 0
@@ -12,37 +13,49 @@ def mrr_score(data_loader, model, device, logger):
         alias2 = batch[3].to(device)
         alias2_word_mask = batch[4].to(device)
         alias2_char_mask = batch[5].to(device)
-        neg_alias_list = batch[6]
+        neg_alias_list = batch[6]  # batch_size(32) x num_neg(5) x word_max_len x char_max_len
         neg_word_mask_list = batch[7]
         neg_char_mask_list = batch[8]
 
         pos_scores = model(alias1, alias1_word_mask, alias1_char_mask, alias2, alias2_word_mask, alias2_char_mask)
         pos_scores = pos_scores.data.cpu().numpy().tolist()
 
-        for i in range(len(pos_scores)):
+        for i in range(len(pos_scores)):  # iterate over batch (32 examples) of positive scores, i.e. shape [1,32]
             neg_alias = neg_alias_list[i].to(device)
             neg_word_mask = neg_word_mask_list[i].to(device)
             neg_char_mask = neg_char_mask_list[i].to(device)
 
+            # select pos word and char lens of current batch
             pos_word_len = alias1_word_mask[i].data.cpu().eq(0).long().sum().item()
             pos_char_len = alias1_char_mask[i].data.cpu().eq(0).long().sum(1).numpy().tolist()
+            # Create as many duplicates of pos word- and char masks as len(neg_alias)
+            num_neg = len(neg_alias)
+            pos_alias2 = alias1[i, :pos_word_len, :max(pos_char_len)].repeat(num_neg, 1, 1)
+            pos_word_mask = alias1_word_mask[i, :pos_word_len].repeat(num_neg, 1)
+            pos_char_mask = alias1_char_mask[i, :pos_word_len, :max(pos_char_len)].repeat(num_neg, 1, 1)
 
-            pos_alias2 = alias1[i, :pos_word_len, :max(pos_char_len)].repeat(len(neg_alias), 1, 1)
-            pos_word_mask = alias1_word_mask[i, :pos_word_len].repeat(len(neg_alias), 1)
-            pos_char_mask = alias1_char_mask[i, :pos_word_len, :max(pos_char_len)].repeat(len(neg_alias), 1, 1)
-
+            # calculate num_neg amount of neg scores using num_neg amount of identical pos_alias2
             neg_scores = model(pos_alias2, pos_word_mask, pos_char_mask, neg_alias, neg_word_mask,
                                neg_char_mask).data.cpu().numpy().tolist()
             pos_score = pos_scores[i]
 
-            # MRR score compute
-            neg_scores.append(pos_score)
+            # MRR score compute: https://en.wikipedia.org/wiki/Mean_reciprocal_rank
+            # 1) In each batch, 5 neg scores and 1 pos score constitute neg_score
+            # 2) sort neg_scores in decreasing ranked order
+            # 3) accumulate ranking value
+            # +) Make sure that model(*args, **kwargs) returns neg_scores in
+            neg_scores.append(pos_score)  # append pos_score of current batch
             sorted_idx = sorted(range(len(neg_scores)), key=neg_scores.__getitem__, reverse=True)
-            ranking = ranking + 1 / (sorted_idx.index(len(neg_scores) - 1) + 1)
+            # get idx of pos_score element (CANONICAL ELEMENT)...
+            # and adjust index number by +1 to allow division with zero, e.g. 1/0 -> 1/1
+            # if 'ranking_denominator' is equal to 1, it means that the pos_score has the highest rank (correct output)
+            ranking_denominator = sorted_idx.index(len(neg_scores) - 1) + 1
+            ranking += 1 / ranking_denominator
             num_examples += 1
+            pdb.set_trace()
 
+    # In order to get highest value of 'ranking', 'ranking_denominator' would need to always be equal to 1
     ranking /= num_examples
-    logger.info("MRR SCORE IS %.5f:" % ranking)
     return ranking
 
 
@@ -72,17 +85,17 @@ def precision_recall(args, data_loader, model, device, ind2char):
         pos_scores = pos_scores.data.cpu().numpy().tolist()
 
         for i in range(len(pos_scores)):
-
             neg_alias = neg_alias_list[i].to(device)
             neg_word_mask = neg_word_mask_list[i].to(device)
             neg_char_mask = neg_char_mask_list[i].to(device)
 
+            # Create as many duplicates of positive match as len(neg_alias)
+            num_neg = len(neg_alias)
             pos_word_len = alias1_word_mask[i].data.cpu().eq(0).long().sum().item()
             pos_char_len = alias1_char_mask[i].data.cpu().eq(0).long().sum(1).numpy().tolist()
-
-            pos_alias2 = alias1[i, :pos_word_len, :max(pos_char_len)].repeat(len(neg_alias), 1, 1)
-            pos_word_mask = alias1_word_mask[i, :pos_word_len].repeat(len(neg_alias), 1)
-            pos_char_mask = alias1_char_mask[i, :pos_word_len, :max(pos_char_len)].repeat(len(neg_alias), 1, 1)
+            pos_alias2 = alias1[i, :pos_word_len, :max(pos_char_len)].repeat(num_neg, 1, 1)
+            pos_word_mask = alias1_word_mask[i, :pos_word_len].repeat(num_neg, 1)
+            pos_char_mask = alias1_char_mask[i, :pos_word_len, :max(pos_char_len)].repeat(num_neg, 1, 1)
 
             neg_scores = model(pos_alias2, pos_word_mask, pos_char_mask, neg_alias, neg_word_mask,
                                neg_char_mask).data.cpu().numpy().tolist()
