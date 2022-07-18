@@ -32,7 +32,7 @@ def load_data(filename: str) -> PositiveAlias2_NegativesAliases:
     return data
 
 
-def load_adg_data(filename: str, num_pos: int = 2, num_neg: int = 5) -> PositiveAliasX_NegativesAliases:
+def load_adg_data(filename: str, num_neg: int, num_pos: int = 2) -> PositiveAliasX_NegativesAliases:
     data = []
     alias1: str
     alias2: str
@@ -44,10 +44,10 @@ def load_adg_data(filename: str, num_pos: int = 2, num_neg: int = 5) -> Positive
     for idx in tmp.keys():
         group = tmp[idx]
         kb_link, pos_aliases, neg_aliases = group
-        assert num_pos <= len(pos_aliases)
         assert num_neg <= len(neg_aliases)
-        pos_aliases = pos_aliases[0:num_pos]
+        assert num_pos <= len(pos_aliases)
         neg_aliases = neg_aliases[0:num_neg]
+        pos_aliases = pos_aliases[0:num_pos]  # out of the 5 positive aliases, pick first two
         data.append((*pos_aliases, neg_aliases))
     return data
 
