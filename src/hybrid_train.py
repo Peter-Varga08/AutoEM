@@ -1,14 +1,15 @@
 import argparse
 import logging
 import os.path
-import pdb
 import pickle
 import time
 
 import torch
+from dotenv import load_dotenv
 from rich.logging import RichHandler
 from torch.nn.utils import clip_grad_norm_
 from tqdm import tqdm
+import wandb
 
 import dataset_hybrid
 from model.rnn_encoder import Hybrid_Alias_Sim
@@ -21,8 +22,17 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[RichHandler(rich_tracebacks=True)],
 )
-
 LOGGER = logging.getLogger(__name__)
+# File logging
+logfile = logging.FileHandler('../log/log_file.log', 'a')
+file_fmt = logging.Formatter('%(asctime)s: [ %(message)s ]', '%m/%d/%Y %I:%M:%S %p')
+logfile.setFormatter(file_fmt)
+LOGGER.addHandler(logfile)
+
+# load environment variable(s)
+load_dotenv()
+PREV_RUN_COUNT = int(os.getenv('RUN_COUNT'))
+CURRENT_RUN_COUNT = PREV_RUN_COUNT + 1
 
 
 def train(args, data_loader, val_train_loader, model, device, best_mrr):
@@ -76,7 +86,7 @@ def train(args, data_loader, val_train_loader, model, device, best_mrr):
 
             if score > best_mrr:
                 LOGGER.info("Saving current model weights...")
-                torch.save(model, args.save_model)
+                torch.save(model, f"{args.save_model}model_NumNeg{args.num_neg}_BatchSize{args.batch_size}.pt")
                 best_mrr = score
             model.train()
             torch.cuda.empty_cache()
@@ -85,10 +95,21 @@ def train(args, data_loader, val_train_loader, model, device, best_mrr):
     return best_mrr
 
 
-def main():
+def main() -> None:
+    wandb.init(project="AutoEM", entity="petervarga", name=f"RUN_{CURRENT_RUN_COUNT}")
+
+    if not os.path.exists('model'):
+        os.mkdir('model')
+    if not os.path.exists('log'):
+        os.mkdir('log')
+
+    LOGGER.info(f"Executing script with RUN_COUNT: [{CURRENT_RUN_COUNT}].")
+    with open('../.env', 'w') as f:
+        f.write(f"RUN_COUNT={CURRENT_RUN_COUNT}")
+
     parser = argparse.ArgumentParser(description='Alias Similarity')
     parser.add_argument('--no-cuda', action='store_true', default=False)
-    parser.add_argument('--data-workers', type=int, default=2)
+    parser.add_argument('--data-workers', type=int, default=4)
     parser.add_argument('--adg', action='store_true', default=True)
     parser.add_argument('--train-file', type=str,
                         default='../artifacts/adg_data_sample:v3/ADGDataSample_international_train.json')
@@ -96,78 +117,56 @@ def main():
                         default='../artifacts/adg_data_sample:v3/ADGDataSample_international_dev.json')
     parser.add_argument('--test-file', type=str,
                         default='../artifacts/adg_data_sample:v3/ADGDataSample_international_test.json')
-    parser.add_argument('--batch-size', type=int, default=32)
-    parser.add_argument('--num-epochs', type=int, default=20)
+    parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--num-epochs', type=int, default=10)
     parser.add_argument('--input-size', type=int, default=300)
     parser.add_argument('--hidden-size', type=int, default=300)
     parser.add_argument('--num-layers', type=int, default=2)
     parser.add_argument('--dropout', type=float, default=0.4)
     parser.add_argument('--embedding-dim', type=int, default=300)
     parser.add_argument('--bidirect', action='store_true', default=True)
-    parser.add_argument('--num-neg', type=int, default=5)
+    parser.add_argument('--num_neg', type=int, default=5)
     parser.add_argument('--resume', action='store_true', default=False)
     parser.add_argument('--test', action='store_true', default=False)
     parser.add_argument('--n-gram', type=int, default=1)
     parser.add_argument('--transfer', action='store_true', default=False)
     parser.add_argument('--base-model', type=str, default='../model/model.pt')
-    parser.add_argument('--save-model', type=str, default='../model/hybrid.pt')
-    parser.add_argument('--load-model', type=str, default='../model/hybrid.pt')
+    parser.add_argument('--save-model', type=str, default='../model/')
+    parser.add_argument('--load-model', type=str, default=None)
     # parser.add_argument('--lowercase', action='store_true', default=False)
     parser.add_argument('--self-attn', action='store_true', default=True)
-    parser.add_argument('--log-file', type=str, default='../log/log_file.log')
+    # parser.add_argument('--log-file', type=str, default='../log/log_file.log')
     parser.add_argument('--pre-negscore', type=str, default=None)
 
     args = parser.parse_args()
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
-
-    fmt = logging.Formatter('%(asctime)s: [ %(message)s ]', '%m/%d/%Y %I:%M:%S %p')
-
-    # Console logging
-    console = logging.StreamHandler()
-    console.setFormatter(fmt)
-
-    # File logging
-    logfile = logging.FileHandler(args.log_file, 'a')
-    logfile.setFormatter(fmt)
-    LOGGER.setLevel(logging.INFO)
-    LOGGER.addHandler(console)
-    LOGGER.addHandler(logfile)
-
-    if not os.path.exists('model'):
-        os.mkdir('model')
-    if not os.path.exists('log'):
-        os.mkdir('log')
+    wandb.config.update(args)
 
     if args.adg:
         LOGGER.info("LOADING ADG DATASETS...")
-        train_exs = load_adg_data(args.train_file)
-        dev_exs = load_adg_data(args.dev_file)
+        train_exs = load_adg_data(args.train_file, args.num_neg)
+        dev_exs = load_adg_data(args.dev_file, args.num_neg)
     else:
         train_exs = load_data(args.train_file)
         dev_exs = load_data(args.dev_file)
 
-    # TODO: Figure out what load_words() returns exactly, and how a vocab can be saved
-    if args.transfer:
-        LOGGER.info('transfer learning')
+    if args.resume:  # both for resuming learning and just for loading to test
+        LOGGER.info(f'Using previous model: [{os.path.basename(args.load_model)}]')
+        model = torch.load(args.load_model)
         voc, char2ind, ind2char = pickle.load(open('../trained_model/vocab.pkl', 'rb'))
-        model = torch.load(args.base_model)
     else:
         voc, char2ind, ind2char = load_words(train_exs + dev_exs, args.n_gram)
-        # vocab_dict = voc, char2ind, ind2char
-        # pickle.dump(vocab_dict, open('../trained_model/pre_trained/vocab_movie.pkl', 'wb'))
-        # exit()
+        vocab_dict = voc, char2ind, ind2char
+        vocab_path = '../model/vocab.pkl'
+        if not os.path.exists(vocab_path):
+            pickle.dump(vocab_dict, open(vocab_path, 'wb'))
         model = Hybrid_Alias_Sim(args, voc)
 
-    if args.resume:
-        LOGGER.info('use previous model')
-        model = torch.load(args.load_model)
-
+    args.cuda = not args.no_cuda and torch.cuda.is_available()
     device = torch.device("cuda" if args.cuda else "cpu")
     model.to(device)
-    # LOGGER.info("MODEL:", model)
 
     if args.test:
-        test_exs = load_data(args.test_file)
+        test_exs = load_adg_data(args.test_file, args.num_neg)
         test_dataset = dataset_hybrid.AliasDataset(test_exs, ind2char, voc, char2ind, args.num_neg)
         test_sampler = torch.utils.data.sampler.SequentialSampler(test_dataset)
         test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size,
@@ -175,7 +174,7 @@ def main():
                                                   collate_fn=dataset_hybrid.val_batchify, pin_memory=args.cuda)
         precision_recall(args, test_loader, model, device, ind2char)
         # error_analysis(args, test_loader, model, device, ind2char)
-
+        LOGGER.info("Test execution has successfully completed.")
         exit()
 
     # train_vec_rep = train_vec(train_exs, char2ind)
@@ -198,9 +197,10 @@ def main():
         LOGGER.info('start epoch:%d' % epoch)
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size,
                                                    sampler=train_sampler, num_workers=args.data_workers,
-                                                   collate_fn=dataset_hybrid.train_batchify, pin_memory=args.cuda)
+                                                   collate_fn=dataset_hybrid.train_batchify_(args.num_neg),
+                                                   pin_memory=args.cuda)
         best_mrr = train(args, train_loader, dev_loader, model, device, best_mrr)
-    LOGGER.info("Training has completed.")
+    LOGGER.info("Training execution has successfully completed.")
 
 
 if __name__ == "__main__":
