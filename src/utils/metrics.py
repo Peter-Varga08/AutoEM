@@ -1,5 +1,4 @@
 from tqdm import tqdm
-import pdb
 
 
 def mrr_score(data_loader, model, device):
@@ -63,9 +62,90 @@ def mrr_score(data_loader, model, device):
     return ranking
 
 
-def precision_recall(args, data_loader, model, device, ind2char):
-    fp = open('ppl_pr_errors_1.txt', 'w')
-    fp1 = open('ppl_pr_errors_0.txt', 'w')
+def precision_recall(args, data_loader, model, device, ind2char) -> None:
+    def unused_author_output() -> None:
+        """
+        Write output of classification in the form of a character list upon the positive and negative scores surpassing
+        an arbitrary threshold. Usage is only recommended for tentative experimental purposes and fine-tunings.
+        """
+        fp = open('ppl_pr_errors_1.txt', 'w')
+        fp1 = open('ppl_pr_errors_0.txt', 'w')
+        if pos_score < 0.247:
+            ex = alias1[i].data.cpu()
+            pos_ex = alias2[i].data.cpu()
+            ch_list = list()
+
+            for j, word in enumerate(ex):
+                if batch[1][i, j].item() == 1:
+                    continue
+                for k, ch in enumerate(word):
+                    if batch[2][i, j, k].item() == 1:
+                        continue
+                    else:
+                        ch = ch.item()
+                        if ch in ind2char:
+                            ch_list.append(ind2char[ch])
+                        else:
+                            ch_list.append(ind2char[1])
+                ch_list.append(' ')
+
+            fp1.write(''.join(ch_list[:-1]) + '\t')
+
+            ch_list = list()
+            for j, word in enumerate(pos_ex):
+                if batch[4][i, j].item() == 1:
+                    continue
+                for k, ch in enumerate(word):
+                    if batch[5][i, j, k].item() == 1:
+                        continue
+                    else:
+                        ch = ch.item()
+                        if ch in ind2char:
+                            ch_list.append(ind2char[ch])
+                        else:
+                            ch_list.append(ind2char[1])
+                ch_list.append(' ')
+            fp1.write(''.join(ch_list[:-1]) + '\t' + str(pos_score) + '\t' + str('1') + '\n')
+
+        for m, v in enumerate(neg_scores):
+            neg_score_list.append(v)
+            if v > 6.582:
+                ex = alias1[i].data.cpu()
+                ch_list = list()
+
+                for j, word in enumerate(ex):
+                    if batch[1][i, j].item() == 1:
+                        continue
+                    for k, ch in enumerate(word):
+                        if batch[2][i, j, k].item() == 1:
+                            continue
+                        else:
+                            ch = ch.item()
+                            if ch in ind2char:
+                                ch_list.append(ind2char[ch])
+                            else:
+                                ch_list.append(ind2char[1])
+                    ch_list.append(' ')
+
+                fp.write(''.join(ch_list[:-1]) + '\t')
+                ch_list = list()
+
+                neg_ex = neg_alias[m].data.cpu()
+                for j, word in enumerate(neg_ex):
+                    if neg_word_mask[m, j].item() == 1:
+                        continue
+                    for k, ch in enumerate(word):
+                        if neg_char_mask[m, j, k].item() == 1:
+                            continue
+                        else:
+                            ch = ch.item()
+                            if ch in ind2char:
+                                ch_list.append(ind2char[ch])
+                            else:
+                                ch_list.append(ind2char[1])
+                    ch_list.append(' ')
+                fp.write(''.join(ch_list[:-1]) + '\t' + str(v) + '\t' + str('0') + '\n')
+
     model.eval()
     ranking = 0
     num_examples = 0
@@ -105,82 +185,7 @@ def precision_recall(args, data_loader, model, device, ind2char):
                                neg_char_mask).data.cpu().numpy().tolist()
             pos_score = pos_scores[i]
             pos_score_list.append(pos_score)
-
-            if pos_score < 0.247:
-                ex = alias1[i].data.cpu()
-                pos_ex = alias2[i].data.cpu()
-                ch_list = list()
-
-                for j, word in enumerate(ex):
-                    if batch[1][i, j].item() == 1:
-                        continue
-                    for k, ch in enumerate(word):
-                        if batch[2][i, j, k].item() == 1:
-                            continue
-                        else:
-                            ch = ch.item()
-                            if ch in ind2char:
-                                ch_list.append(ind2char[ch])
-                            else:
-                                ch_list.append(ind2char[1])
-                    ch_list.append(' ')
-
-                fp1.write(''.join(ch_list[:-1]) + '\t')
-
-                ch_list = list()
-                for j, word in enumerate(pos_ex):
-                    if batch[4][i, j].item() == 1:
-                        continue
-                    for k, ch in enumerate(word):
-                        if batch[5][i, j, k].item() == 1:
-                            continue
-                        else:
-                            ch = ch.item()
-                            if ch in ind2char:
-                                ch_list.append(ind2char[ch])
-                            else:
-                                ch_list.append(ind2char[1])
-                    ch_list.append(' ')
-                fp1.write(''.join(ch_list[:-1]) + '\t' + str(pos_score) + '\t' + str('1') + '\n')
-
-            for m, v in enumerate(neg_scores):
-                neg_score_list.append(v)
-                if v > 6.582:
-                    ex = alias1[i].data.cpu()
-                    ch_list = list()
-
-                    for j, word in enumerate(ex):
-                        if batch[1][i, j].item() == 1:
-                            continue
-                        for k, ch in enumerate(word):
-                            if batch[2][i, j, k].item() == 1:
-                                continue
-                            else:
-                                ch = ch.item()
-                                if ch in ind2char:
-                                    ch_list.append(ind2char[ch])
-                                else:
-                                    ch_list.append(ind2char[1])
-                        ch_list.append(' ')
-
-                    fp.write(''.join(ch_list[:-1]) + '\t')
-                    ch_list = list()
-
-                    neg_ex = neg_alias[m].data.cpu()
-                    for j, word in enumerate(neg_ex):
-                        if neg_word_mask[m, j].item() == 1:
-                            continue
-                        for k, ch in enumerate(word):
-                            if neg_char_mask[m, j, k].item() == 1:
-                                continue
-                            else:
-                                ch = ch.item()
-                                if ch in ind2char:
-                                    ch_list.append(ind2char[ch])
-                                else:
-                                    ch_list.append(ind2char[1])
-                        ch_list.append(' ')
-                    fp.write(''.join(ch_list[:-1]) + '\t' + str(v) + '\t' + str('0') + '\n')
+            unused_author_output()
 
             neg_scores.append(pos_score)
             sorted_idx = sorted(range(len(neg_scores)), key=neg_scores.__getitem__, reverse=True)

@@ -1,10 +1,12 @@
+import pdb
 import random
+from typing import Callable
 
 import torch
 from torch.utils.data import Dataset
 
 
-def vectorize(ex, char2ind, neg_num):
+def vectorize(ex, char2ind, num_neg):
     """
     Create a vectorized representation for each positive and negative alias within each example.
     For example: "Mike Johns" --> vec = [[num, num, num, num], [num, num, num, num, num]]
@@ -29,7 +31,7 @@ def vectorize(ex, char2ind, neg_num):
             vec_neg.append(char_in_word)
         if len(vec_neg) > 0:
             vec_neg_aliases.append(vec_neg)
-    assert len(vec_neg_aliases) >= neg_num
+    assert len(vec_neg_aliases) >= num_neg, f"len(vec_neg_aliases): {len(vec_neg_aliases)}"
 
     return vec_alias1, vec_alias2, vec_neg_aliases
 
@@ -110,18 +112,21 @@ def val_batchify(batch):
     return x1, x1_word_mask, x1_char_mask, x2, x2_word_mask, x2_char_mask, x3, x3_word_mask, x3_char_mask
 
 
-# TODO: Fix neg aliases batchify
-def train_batchify(batch):
-    '''
+def train_batchify_(num_neg: int) -> Callable:
+    def wrapper_func(*args, **kwargs):
+        return train_batchify(num_neg, *args, **kwargs)
+    return wrapper_func
+
+
+def train_batchify(num_neg, batch):
+    """
     Batchify train examples by
     Return:
     x1: pos_alias1, batch * max(x1_length) * max(char1_length)
     x2: pos_alias2, batch * max(x2_length) * max(char2_length)
     x3: neg_alias, (batch*num_neg) * max(x3_length)
-    '''
+    """
     # len(neg_subsamples) = len(batch) * num_neg
-
-    num_neg = 5
     neg_alias = list()
     x1_word_len, x1_char_len, x2_word_len, x2_char_len, x3_word_len, x3_char_len = [[] for _ in range(6)]
 
@@ -191,5 +196,5 @@ def train_batchify(batch):
         neg3_word_mask.append(x3_word_mask.bool())
         neg3_char_mask.append(x3_char_mask.bool())
 
-    return x1, x1_word_mask.bool(), x1_char_mask.bool(), x2, x2_word_mask.bool(), x2_char_mask.bool(),\
+    return x1, x1_word_mask.bool(), x1_char_mask.bool(), x2, x2_word_mask.bool(), x2_char_mask.bool(), \
            neg3, neg3_word_mask, neg3_char_mask
