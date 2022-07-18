@@ -62,7 +62,7 @@ def mrr_score(data_loader, model, device):
     return ranking
 
 
-def precision_recall(args, data_loader, model, device, ind2char) -> None:
+def precision_recall(args, data_loader, model, device, ind2char, logger) -> None:
     def unused_author_output() -> None:
         """
         Write output of classification in the form of a character list upon the positive and negative scores surpassing
@@ -195,15 +195,15 @@ def precision_recall(args, data_loader, model, device, ind2char) -> None:
 
     pos_sorted_idx = sorted(range(len(pos_score_list)), key=pos_score_list.__getitem__, reverse=True)
     ranking = ranking / num_examples
-    print("MRR SCORE IS: %.5f" % ranking)
-
-    for recall in recall_list:
-        num_correct_labels = int(num_examples * recall)
-        score_limit = pos_score_list[pos_sorted_idx[num_correct_labels]]
-
-        # precision
-        lb_list = [i for i in range(len(neg_score_list)) if neg_score_list[i] >= score_limit]
-        precision = num_correct_labels / (len(lb_list) + num_correct_labels)
-        print('recall is: %.2f,  precision is: %.3f, score is: %.3f' % (recall, precision, score_limit))
+    logger.info("MRR SCORE IS: %.5f" % ranking)
+    #
+    # for recall in recall_list:
+    #     num_correct_labels = int(num_examples * recall)
+    #     score_limit = pos_score_list[pos_sorted_idx[num_correct_labels]]
+    #
+    #     # precision
+    #     lb_list = [i for i in range(len(neg_score_list)) if neg_score_list[i] >= score_limit]
+    #     precision = num_correct_labels / (len(lb_list) + num_correct_labels)
+    #     print('recall is: %.2f,  precision is: %.3f, score is: %.3f' % (recall, precision, score_limit))
 
     print('\n')

@@ -1,7 +1,6 @@
 import argparse
 import logging
 import os.path
-import pickle
 import time
 
 import torch
@@ -9,9 +8,9 @@ from dotenv import load_dotenv
 from rich.logging import RichHandler
 from torch.nn.utils import clip_grad_norm_
 from tqdm import tqdm
-import wandb
 
 import dataset_hybrid
+import wandb
 from model.rnn_encoder import Hybrid_Alias_Sim
 from utils.dataloading import load_adg_data, load_data, load_words
 from utils.metrics import mrr_score, precision_recall
@@ -23,16 +22,13 @@ logging.basicConfig(
     handlers=[RichHandler(rich_tracebacks=True)],
 )
 LOGGER = logging.getLogger(__name__)
-# File logging
-logfile = logging.FileHandler('../log/log_file.log', 'a')
-file_fmt = logging.Formatter('%(asctime)s: [ %(message)s ]', '%m/%d/%Y %I:%M:%S %p')
-logfile.setFormatter(file_fmt)
-LOGGER.addHandler(logfile)
 
 # load environment variable(s)
 load_dotenv()
 PREV_RUN_COUNT = int(os.getenv('RUN_COUNT'))
 CURRENT_RUN_COUNT = PREV_RUN_COUNT + 1
+with open('../.env', 'w') as f:
+    f.write(f"RUN_COUNT={CURRENT_RUN_COUNT}")
 
 
 def train(args, data_loader, val_train_loader, model, device, best_mrr):
@@ -82,7 +78,7 @@ def train(args, data_loader, val_train_loader, model, device, best_mrr):
             print_loss_total = 0
             # compute MRR score on ENTIRE validation dataloader
             score = mrr_score(val_train_loader, model, device)
-            LOGGER.info("MRR SCORE IS %.5f:" % score)
+            LOGGER.info("VALIDATION MRR SCORE IS %.5f:" % score)
 
             if score > best_mrr:
                 LOGGER.info("Saving current model weights...")
@@ -103,14 +99,9 @@ def main() -> None:
     if not os.path.exists('log'):
         os.mkdir('log')
 
-    LOGGER.info(f"Executing script with RUN_COUNT: [{CURRENT_RUN_COUNT}].")
-    with open('../.env', 'w') as f:
-        f.write(f"RUN_COUNT={CURRENT_RUN_COUNT}")
-
     parser = argparse.ArgumentParser(description='Alias Similarity')
     parser.add_argument('--no-cuda', action='store_true', default=False)
     parser.add_argument('--data-workers', type=int, default=4)
-    parser.add_argument('--adg', action='store_true', default=True)
     parser.add_argument('--train-file', type=str,
                         default='../artifacts/adg_data_sample:v3/ADGDataSample_international_train.json')
     parser.add_argument('--dev-file', type=str,
@@ -141,24 +132,35 @@ def main() -> None:
     args = parser.parse_args()
     wandb.config.update(args)
 
-    if args.adg:
-        LOGGER.info("LOADING ADG DATASETS...")
-        train_exs = load_adg_data(args.train_file, args.num_neg)
-        dev_exs = load_adg_data(args.dev_file, args.num_neg)
+    # File logging
+    if args.test:
+        logfile = logging.FileHandler('../log/log_file_test.log', 'a')
     else:
-        train_exs = load_data(args.train_file)
-        dev_exs = load_data(args.dev_file)
+        logfile = logging.FileHandler('../log/log_file_train.log', 'a')
+    file_fmt = logging.Formatter('%(asctime)s: [ %(message)s ]', '%m/%d/%Y %I:%M:%S %p')
+    logfile.setFormatter(file_fmt)
+    LOGGER.addHandler(logfile)
 
-    if args.resume:  # both for resuming learning and just for loading to test
+    LOGGER.info(f"Executing script with RUN_COUNT: [{CURRENT_RUN_COUNT}].")
+
+    vocab_path_pt = '../model/vocab.pt'
+    if args.resume or args.test:  # both for resuming learning and just for loading to test
         LOGGER.info(f'Using previous model: [{os.path.basename(args.load_model)}]')
         model = torch.load(args.load_model)
-        voc, char2ind, ind2char = pickle.load(open('../trained_model/vocab.pkl', 'rb'))
+        voc, char2ind, ind2char = torch.load(vocab_path_pt)['vocabulary']
     else:
+        LOGGER.info("LOADING ADG TRAIN AND DEV DATASETS...")
+        train_exs = load_adg_data(args.train_file, args.num_neg)
+        dev_exs = load_adg_data(args.dev_file, args.num_neg)
         voc, char2ind, ind2char = load_words(train_exs + dev_exs, args.n_gram)
         vocab_dict = voc, char2ind, ind2char
-        vocab_path = '../model/vocab.pkl'
-        if not os.path.exists(vocab_path):
-            pickle.dump(vocab_dict, open(vocab_path, 'wb'))
+        if not os.path.exists(vocab_path_pt):
+            LOGGER.info(
+                f"Saving vocabulary of n-gram [{args.n_gram}], created from "
+                f"\ntrain set:[{args.train_file}]"
+                f"\ndev set: [{args.dev_file}]."
+            )
+            torch.save({"vocabulary": vocab_dict}, vocab_path_pt)
         model = Hybrid_Alias_Sim(args, voc)
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -166,13 +168,14 @@ def main() -> None:
     model.to(device)
 
     if args.test:
+        LOGGER.info(f"Initializing test run with train set: '{args.test_file}'.")
         test_exs = load_adg_data(args.test_file, args.num_neg)
         test_dataset = dataset_hybrid.AliasDataset(test_exs, ind2char, voc, char2ind, args.num_neg)
         test_sampler = torch.utils.data.sampler.SequentialSampler(test_dataset)
         test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size,
                                                   sampler=test_sampler, num_workers=args.data_workers,
                                                   collate_fn=dataset_hybrid.val_batchify, pin_memory=args.cuda)
-        precision_recall(args, test_loader, model, device, ind2char)
+        precision_recall(args, test_loader, model, device, ind2char, LOGGER)
         # error_analysis(args, test_loader, model, device, ind2char)
         LOGGER.info("Test execution has successfully completed.")
         exit()
